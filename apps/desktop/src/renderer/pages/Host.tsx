@@ -25,9 +25,11 @@ export default function Host({ onToast }: HostProps) {
   const [localIp, setLocalIp] = useState('')
   const [deviceCount, setDeviceCount] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
+    setRefreshing(true)
     try {
       const [status, config] = await Promise.all([window.api.getServerStatus(), window.api.getConfig()])
       setServer(status)
@@ -36,16 +38,18 @@ export default function Host({ onToast }: HostProps) {
       if (status.running) {
         const response = await window.api.fetchDevices(status.url, config.userId)
         if (response.success) {
-          setDeviceCount(response.devices?.length || 0)
+          setDeviceCount(response.devices?.filter((device: { is_online?: boolean }) => device.is_online).length || 0)
         } else {
           setDeviceCount(null)
         }
       } else {
         setDeviceCount(null)
       }
-      setError('')
+      setError((current) => current.startsWith('Could not check') ? '' : current)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not check the host status.')
+    } finally {
+      setRefreshing(false)
     }
   }, [])
 
@@ -107,12 +111,20 @@ export default function Host({ onToast }: HostProps) {
   }
 
   const handleCopyAddress = async () => {
-    await window.api.copyClipboard(connectionUrl)
-    onToast('success', 'Host address copied.')
+    try {
+      await window.api.copyClipboard(connectionUrl)
+      onToast('success', 'Host address copied.')
+    } catch (err) {
+      onToast('error', err instanceof Error ? err.message : 'Could not copy the host address.')
+    }
   }
 
-  const handleOpenDashboard = () => {
-    window.api.openExternal(`${server.url.replace(/\/+$/, '')}/dashboard`)
+  const handleOpenDashboard = async () => {
+    try {
+      await window.api.openExternal(`${server.url.replace(/\/+$/, '')}/dashboard`)
+    } catch (err) {
+      onToast('error', err instanceof Error ? err.message : 'Could not open the web dashboard.')
+    }
   }
 
   return (
@@ -213,7 +225,7 @@ export default function Host({ onToast }: HostProps) {
               <span className="host-eyebrow">HOST OVERVIEW</span>
               <h2>At a glance</h2>
             </div>
-            <button type="button" className="host-refresh-button" onClick={() => void refresh()} aria-label="Refresh host status">
+            <button type="button" className="host-refresh-button" onClick={() => void refresh()} aria-label="Refresh host status" disabled={refreshing}>
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M20 7v5h-5M4 17v-5h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M5.5 9a7 7 0 0 1 12-2L20 12M4 12l2.5 5a7 7 0 0 0 12-2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -226,7 +238,7 @@ export default function Host({ onToast }: HostProps) {
               <strong className={server.running ? 'host-stat-online' : ''}>{server.running ? 'Online' : 'Stopped'}</strong>
             </div>
             <div className="host-stat-row">
-              <span>Devices connected</span>
+              <span>Devices online</span>
               <strong>{deviceCount === null ? '—' : deviceCount}</strong>
             </div>
             <div className="host-stat-row">

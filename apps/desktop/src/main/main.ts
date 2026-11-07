@@ -27,6 +27,22 @@ let lastReportStatus: { success: boolean; message: string; timestamp: number } |
 let serverProcess: ChildProcess | null = null
 let hasNotifiedLowBattery = false
 
+function resolveDashboardUrl(baseUrl: string): string {
+  if (!serverProcess || serverProcess.killed || serverProcess.exitCode !== null) return baseUrl
+
+  try {
+    const url = new URL(baseUrl)
+    if (['localhost', '127.0.0.1', '::1'].includes(url.hostname.replace(/^\[|\]$/g, ''))) {
+      url.hostname = getHostAddress()
+      return url.toString().replace(/\/$/, '')
+    }
+  } catch {
+    return baseUrl
+  }
+
+  return baseUrl
+}
+
 function setupApplicationMenu() {
   const isMac = process.platform === 'darwin'
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -414,7 +430,7 @@ async function updateTrayMenu() {
     {
       label: 'Open Web Dashboard in Browser',
       click: () => {
-        const baseUrl = (store.get('dashboardUrl') as string) || 'http://localhost:8080'
+        const baseUrl = resolveDashboardUrl((store.get('dashboardUrl') as string) || 'http://localhost:8080')
         const url = `${baseUrl.replace(/\/+$/, '').replace(/\/dashboard$/, '')}/dashboard`
         shell.openExternal(url)
       }
@@ -510,7 +526,7 @@ function checkLowBatteryAlert(stats: TelemetryPayload) {
 }
 
 async function triggerReport() {
-  const url = store.get('dashboardUrl') as string
+  const url = resolveDashboardUrl(store.get('dashboardUrl') as string)
   const userId = store.get('userId') as string
   const deviceId = store.get('deviceId') as string
   const apiKey = store.get('apiKey') as string   // FIX 4
@@ -582,7 +598,8 @@ async function testConnection(baseUrl: string, userId?: string): Promise<{ succe
   }
 
   const startTime = Date.now()
-  const cleanUrl = `${baseUrl.replace(/\/$/, '')}/api/devices${userId && userId !== 'default' ? `?user_id=${encodeURIComponent(userId)}` : ''}`
+  const resolvedUrl = resolveDashboardUrl(baseUrl)
+  const cleanUrl = `${resolvedUrl.replace(/\/$/, '')}/api/devices${userId && userId !== 'default' ? `?user_id=${encodeURIComponent(userId)}` : ''}`
 
   return new Promise((resolve) => {
     try {
@@ -630,7 +647,8 @@ async function fetchDevices(
     return { success: false, message: 'Dashboard URL is not configured' }
   }
 
-  const cleanUrl = `${baseUrl.replace(/\/$/, '')}/api/devices${userId && userId !== 'default' ? `?user_id=${encodeURIComponent(userId)}` : ''}`
+  const resolvedUrl = resolveDashboardUrl(baseUrl)
+  const cleanUrl = `${resolvedUrl.replace(/\/$/, '')}/api/devices${userId && userId !== 'default' ? `?user_id=${encodeURIComponent(userId)}` : ''}`
 
   return new Promise((resolve) => {
     try {
@@ -779,7 +797,7 @@ ipcMain.handle('start-server', async () => await startServer())
 ipcMain.handle('stop-server', async () => await stopServer())
 
 ipcMain.handle('open-external', (_, url: string) => {
-  if (url) shell.openExternal(url)
+  if (url) shell.openExternal(resolveDashboardUrl(url))
 })
 
 ipcMain.handle('copy-clipboard', (_, text: string) => {

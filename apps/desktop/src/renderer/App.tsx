@@ -72,7 +72,7 @@ export default function App() {
         <div className="titlebar-right">
           <div className="agent-status-pill">
             <div className="status-pulse-dot" />
-            <span>{intervalMin > 0 ? `Every ${intervalMin}m` : 'Manual sync'}</span>
+            <span>{intervalMin > 0 ? `Auto-sync · ${intervalMin}m` : 'Manual sync'}</span>
           </div>
         </div>
       </header>
