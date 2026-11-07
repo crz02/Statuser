@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react'
 import Home from './pages/Home'
 import Devices from './pages/Devices'
+import Host from './pages/Host'
 import Settings from './pages/Settings'
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'home' | 'devices' | 'settings'>('home')
+  const [activeTab, setActiveTab] = useState<'host' | 'home' | 'devices' | 'settings'>('host')
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [intervalMin, setIntervalMin] = useState<number>(5)
 
   useEffect(() => {
     // Listen for menu navigation (e.g. Preferences Command+,)
     const cleanupNav = window.api.on('navigate-to', (tab: string) => {
-      if (tab === 'home' || tab === 'devices' || tab === 'settings') {
+      if (tab === 'host' || tab === 'home' || tab === 'devices' || tab === 'settings') {
         setActiveTab(tab as any)
       }
     })
@@ -64,7 +65,7 @@ export default function App() {
               <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
             </svg>
             Statuser
-            <span className="app-brand-badge">Agent</span>
+            <span className="app-brand-badge">Device Hub</span>
           </div>
         </div>
 
@@ -78,6 +79,7 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="content-area">
+        {activeTab === 'host' && <Host onToast={showToast} />}
         {activeTab === 'home' && <Home onToast={showToast} />}
         {activeTab === 'devices' && <Devices onToast={showToast} />}
         {activeTab === 'settings' && (
@@ -90,6 +92,17 @@ export default function App() {
 
       {/* Modern Bottom Navigation Bar */}
       <nav className="bottom-nav">
+        <button
+          className={`nav-item ${activeTab === 'host' ? 'active' : ''}`}
+          onClick={() => setActiveTab('host')}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="4" width="18" height="13" rx="2" />
+            <path d="M8 21h8M12 17v4M7 9h10M7 12h6" />
+          </svg>
+          Host
+        </button>
+
         <button
           className={`nav-item ${activeTab === 'home' ? 'active' : ''}`}
           onClick={() => setActiveTab('home')}

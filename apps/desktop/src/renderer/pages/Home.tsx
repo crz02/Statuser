@@ -8,14 +8,6 @@ export default function Home({ onToast }: HomeProps) {
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [reporting, setReporting] = useState(false)
-  const [lastReportedTime, setLastReportedTime] = useState<string | null>(null)
-  const [config, setConfig] = useState<any>(null)
-  const [serverStatus, setServerStatus] = useState<{ running: boolean; url: string; canManage: boolean }>({
-    running: false,
-    url: 'http://localhost:8080',
-    canManage: false
-  })
-  const [serverActionLoading, setServerActionLoading] = useState(false)
   const [appInfo, setAppInfo] = useState<any>(null)
 
   const loadStats = async () => {
@@ -29,39 +21,19 @@ export default function Home({ onToast }: HomeProps) {
     }
   }
 
-  const checkServer = async () => {
-    try {
-      const s = await window.api.getServerStatus()
-      setServerStatus(s)
-    } catch {
-      // ignore
-    }
-  }
-
   useEffect(() => {
     loadStats()
-    checkServer()
-    window.api.getConfig().then(setConfig)
     window.api.getAppInfo().then(setAppInfo)
 
     const intervalStats = setInterval(loadStats, 3500)
-    const intervalServer = setInterval(checkServer, 5000)
 
     const cleanupUpdate = window.api.on('telemetry-updated', (updated: any) => {
       setStats(updated)
     })
 
-    const cleanupStatus = window.api.on('report-status', (status: any) => {
-      if (status.success) {
-        setLastReportedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-      }
-    })
-
     return () => {
       clearInterval(intervalStats)
-      clearInterval(intervalServer)
       cleanupUpdate()
-      cleanupStatus()
     }
   }, [])
 
@@ -70,7 +42,6 @@ export default function Home({ onToast }: HomeProps) {
     try {
       const res = await window.api.triggerReport()
       if (res.success) {
-        setLastReportedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
         onToast('success', 'Telemetry reported to dashboard')
         loadStats()
       } else {
@@ -81,31 +52,6 @@ export default function Home({ onToast }: HomeProps) {
     } finally {
       setReporting(false)
     }
-  }
-
-  const handleStartServer = async () => {
-    setServerActionLoading(true)
-    try {
-      const res = await window.api.startServer()
-      if (res.success) {
-        onToast('success', 'Dashboard server started on :8080')
-        await checkServer()
-        // Trigger report right away
-        await handleReportNow()
-      } else {
-        onToast('error', res.message || 'Failed to start server')
-      }
-    } catch (e: any) {
-      onToast('error', e.message || 'Error starting server')
-    } finally {
-      setServerActionLoading(false)
-    }
-  }
-
-  const handleOpenDashboard = () => {
-    const baseUrl = config?.dashboardUrl || 'http://localhost:8080'
-    const url = `${baseUrl.replace(/\/+$/, '').replace(/\/dashboard$/, '')}/dashboard`
-    window.api.openExternal(url)
   }
 
   const handleCopySpecs = () => {
@@ -193,60 +139,6 @@ Generated: ${new Date().toLocaleString()}
               </>
             )}
           </button>
-        </div>
-      </div>
-
-      {/* Local Server Quick Banner */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: serverStatus.running ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.04)',
-          border: `1px solid ${serverStatus.running ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.08)'}`,
-          borderRadius: 12,
-          padding: '10px 16px',
-          marginBottom: 18,
-          fontSize: 12
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              backgroundColor: serverStatus.running ? 'var(--color-green)' : 'var(--text-dim)',
-              boxShadow: serverStatus.running ? '0 0 8px var(--color-green)' : 'none'
-            }}
-          />
-          <span style={{ color: serverStatus.running ? '#34d399' : 'var(--text-muted)', fontWeight: 600 }}>
-            {serverStatus.running
-              ? `Dashboard Server Online on ${serverStatus.url}`
-              : 'Dashboard Server is Offline'}
-          </span>
-          {lastReportedTime && (
-            <span style={{ color: 'var(--text-dim)', marginLeft: 8 }}>
-              • Last synced {lastReportedTime}
-            </span>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', gap: 8 }}>
-          {serverStatus.running ? (
-            <button className="btn sm" onClick={handleOpenDashboard} style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
-              Open in Browser ↗
-            </button>
-          ) : (
-            <button
-              className="btn sm"
-              onClick={handleStartServer}
-              disabled={serverActionLoading}
-              style={{ background: 'rgba(99, 102, 241, 0.2)', borderColor: 'rgba(99, 102, 241, 0.4)', color: '#c7d2fe' }}
-            >
-              {serverActionLoading ? 'Starting...' : 'Start Server'}
-            </button>
-          )}
         </div>
       </div>
 

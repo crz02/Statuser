@@ -230,12 +230,31 @@ function getPythonCommand(): string {
   return 'python3'
 }
 
-async function checkIsServerRunning(): Promise<boolean> {
+function getHostAddress(): string {
+  const interfaces = os.networkInterfaces()
+  const candidates = Object.entries(interfaces)
+    .sort(([a], [b]) => Number(b === 'en0') - Number(a === 'en0'))
+    .flatMap(([, addresses]) => addresses || [])
+
+  for (const address of candidates) {
+    if (address.family !== 'IPv4' || address.internal) continue
+    const octets = address.address.split('.').map(Number)
+    const [first, second] = octets
+    const isPrivate =
+      first === 10 ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168)
+    if (isPrivate) return address.address
+  }
+  return '127.0.0.1'
+}
+
+async function checkIsServerRunning(host = getHostAddress()): Promise<boolean> {
   return new Promise((resolve) => {
     try {
       const request = net.request({
         method: 'GET',
-        url: 'http://127.0.0.1:8080/api/devices'
+        url: `http://${host}:8080/api/devices`
       })
       const timer = setTimeout(() => {
         request.abort()
@@ -257,7 +276,8 @@ async function checkIsServerRunning(): Promise<boolean> {
 }
 
 async function startServer(): Promise<{ success: boolean; message: string }> {
-  const isRunning = await checkIsServerRunning()
+  const hostAddress = getHostAddress()
+  const isRunning = await checkIsServerRunning(hostAddress)
   if (isRunning) {
     return { success: true, message: 'Server is already running on http://localhost:8080' }
   }
@@ -269,49 +289,90 @@ async function startServer(): Promise<{ success: boolean; message: string }> {
 
   try {
     const pythonCmd = getPythonCommand()
-    serverProcess = spawn(pythonCmd, [scriptPath], {
+    const fs = require('fs')
+    const dataDir = join(app.getPath('userData'), 'host-data')
+    fs.mkdirSync(dataDir, { recursive: true })
+
+    const child = spawn(pythonCmd, [scriptPath], {
       detached: false,
-      stdio: 'ignore',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        STATUSER_DATA_DIR: dataDir,
+        STATUSER_BIND_HOST: hostAddress
+      },
       // On Windows, use shell to resolve python from PATH
       shell: process.platform === 'win32'
     })
+    serverProcess = child
 
-    // Poll for port 8080 to become active (up to 3 seconds)
-    for (let i = 0; i < 6; i++) {
-      await new Promise((r) => setTimeout(r, 500))
-      if (await checkIsServerRunning()) {
+    let startupError = ''
+    let serverOutput = ''
+    child.once('error', (error) => {
+      startupError = error.message
+    })
+    child.stdout?.on('data', (chunk: Buffer) => {
+      serverOutput = `${serverOutput}${chunk.toString()}`.slice(-2000)
+    })
+    child.stderr?.on('data', (chunk: Buffer) => {
+      serverOutput = `${serverOutput}${chunk.toString()}`.slice(-2000)
+    })
+
+    // Poll for port 8080 to become active while surfacing process startup errors.
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 250))
+      if (await checkIsServerRunning(hostAddress)) {
         updateTrayMenu()
         return { success: true, message: 'Dashboard server started on http://localhost:8080' }
       }
+      if (startupError) {
+        serverProcess = null
+        return {
+          success: false,
+          message: `Could not launch the server with ${pythonCmd}: ${startupError}. Install Python 3 or use a packaged host build.`
+        }
+      }
+      if (child.exitCode !== null) {
+        serverProcess = null
+        const detail = serverOutput.trim()
+        return {
+          success: false,
+          message: detail
+            ? `Dashboard server exited during startup: ${detail}`
+            : `Dashboard server exited during startup (code ${child.exitCode}).`
+        }
+      }
     }
-    return { success: false, message: 'Server launched, but not yet responding on port 8080' }
+    child.kill('SIGTERM')
+    if (serverProcess === child) serverProcess = null
+    return {
+      success: false,
+      message: serverOutput.trim()
+        ? `Dashboard server did not become ready: ${serverOutput.trim()}`
+        : 'Server launched, but did not respond on port 8080 within 5 seconds.'
+    }
   } catch (e: any) {
     return { success: false, message: e.message || 'Failed to start server process' }
   }
 }
 
 async function stopServer(): Promise<{ success: boolean; message: string }> {
-  if (serverProcess) {
-    try {
-      if (process.platform === 'win32') {
-        // Windows: use taskkill to terminate the process tree
-        require('child_process').execSync(`taskkill /PID ${serverProcess.pid} /T /F`, { stdio: 'ignore' })
-      } else {
-        serverProcess.kill('SIGTERM')
-      }
-    } catch {
-      // ignore kill errors
-    }
-    serverProcess = null
+  if (!serverProcess) {
+    return { success: false, message: 'This server was not started by Statuser, so it cannot be stopped here.' }
   }
+
   try {
     if (process.platform === 'win32') {
-      require('child_process').execSync('taskkill /F /IM python.exe /FI "WINDOWTITLE eq server*" 2>nul', { stdio: 'ignore' })
+      require('child_process').execSync(`taskkill /PID ${serverProcess.pid} /T /F`, { stdio: 'ignore' })
     } else {
-      require('child_process').execSync('pkill -f "python3 server/app.py" || true', { stdio: 'ignore' })
+      serverProcess.kill('SIGTERM')
     }
-  } catch {
-    // ignore
+    serverProcess = null
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? `Could not stop the Statuser host: ${error.message}` : 'Could not stop the Statuser host.'
+    }
   }
   updateTrayMenu()
   return { success: true, message: 'Dashboard server stopped' }
@@ -703,12 +764,15 @@ ipcMain.handle('get-local-device', async () => {
 })
 
 ipcMain.handle('get-server-status', async () => {
+  const hostAddress = getHostAddress()
   const running = await checkIsServerRunning()
   return {
     running,
     port: 8080,
-    url: 'http://localhost:8080',
-    canManage: !!findServerScriptPath()
+    url: `http://${hostAddress}:8080`,
+    hostAddress,
+    canManage: !!findServerScriptPath(),
+    canStop: running && !!serverProcess
   }
 })
 ipcMain.handle('start-server', async () => await startServer())

@@ -8,7 +8,7 @@ export interface Api {
   testConnection: (url: string, userId?: string) => Promise<{ success: boolean; latencyMs?: number; message: string }>
   fetchDevices: (url: string, userId?: string) => Promise<{ success: boolean; isOffline?: boolean; devices?: any[]; message?: string }>
   getLocalDevice: () => Promise<any>
-  getServerStatus: () => Promise<{ running: boolean; port: number; url: string; canManage: boolean }>
+  getServerStatus: () => Promise<{ running: boolean; port: number; url: string; hostAddress: string; canManage: boolean; canStop: boolean }>
   startServer: () => Promise<{ success: boolean; message: string }>
   stopServer: () => Promise<{ success: boolean; message: string }>
   openExternal: (url: string) => Promise<void>

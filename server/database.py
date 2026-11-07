@@ -3,7 +3,9 @@ import os
 import json
 import time
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.db")
+DATA_DIR = os.environ.get("STATUSER_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, "dashboard.db")
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
