@@ -658,7 +658,8 @@ def main():
     else:
         print(f"⚠️  API key auth is DISABLED (set REPORT_API_KEY in .env to enable)")
 
-    server = ThreadedHTTPServer(("0.0.0.0", port), DashboardHandler)
+    bind_host = os.environ.get("STATUSER_BIND_HOST", "0.0.0.0")
+    server = ThreadedHTTPServer((bind_host, port), DashboardHandler)
     print(f"🚀 Statuser Multi-User Telemetry Server running at http://localhost:{port}")
     print(f"📡 API Ingestion Webhook: http://localhost:{port}/api/report")
     try:
